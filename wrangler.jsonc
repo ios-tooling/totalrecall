@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "totalrecall",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // `wrangler d1 create totalrecall`, then paste the printed id here.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "totalrecall",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ]
+
+  // Optional: forward session snapshots to Chief of Staff. A service binding is
+  // required when both Workers live on the same account; uncomment once
+  // `chief-of-staff-ingest` is deployed there, and set the COS_INGEST_TOKEN secret.
+  // "services": [{ "binding": "COS", "service": "chief-of-staff-ingest" }]
+}
