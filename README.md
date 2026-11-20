@@ -61,15 +61,26 @@ npm run dev
 
 ## Deploy
 
-1. `npx wrangler d1 create totalrecall`, then paste the printed `database_id` into `wrangler.jsonc`.
-2. `npm run migrate:remote`
-3. `npx wrangler secret put AGENT_TOKEN`, then the same for `INGEST_TOKEN` (two different long random strings).
-4. `npm run deploy`. The Worker is served at `https://total-recall.stream`, a custom domain set in `wrangler.jsonc`; the zone has to be on the same Cloudflare account first. There is no `workers.dev` address.
-5. Chief of Staff forwarding (optional): uncomment the `services` binding in `wrangler.jsonc`, `npx wrangler secret put COS_INGEST_TOKEN` with Chief of Staff's ingest token, and deploy again. Without both, nothing is forwarded.
+The Worker runs at `https://total-recall.stream`, backed by the D1 database `totalrecall` (its id is in `wrangler.jsonc`). There is no `workers.dev` address.
+
+To ship a change:
+
+1. `npm run migrate:remote`, if `migrations/` has something new.
+2. `npm run deploy`
+
+Secrets are set once with `npx wrangler secret put <NAME>`:
+
+| Secret | Purpose |
+| --- | --- |
+| `AGENT_TOKEN` | Bearer token for agents (`/mcp`, and `/v1/events`). |
+| `INGEST_TOKEN` | Bearer token for hook scripts (`/v1/events` only). |
+| `COS_INGEST_TOKEN` | Chief of Staff's ingest token. Forwarding also needs the `services` binding in `wrangler.jsonc` uncommented; without both, nothing is forwarded. |
+
+To stand up a copy elsewhere: `npx wrangler d1 create <name>`, put the printed id and your own domain in `wrangler.jsonc`, then migrate, set the secrets and deploy.
 
 ## Connect a client
 
-None of this section has been run against a deployed Worker yet.
+The Worker is deployed and answers MCP calls; the client setup below has not been run on a Mac yet.
 
 **Hooks (Claude Code and Codex, on a Mac).** Copy `client/totalrecall-hook.sh` to `~/.local/bin/`, and create `~/.config/totalrecall/env` (mode 600):
 

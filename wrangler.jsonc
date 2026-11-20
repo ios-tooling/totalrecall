@@ -11,12 +11,11 @@
   "routes": [{ "pattern": "total-recall.stream", "custom_domain": true }],
   "workers_dev": false,
 
-  // `wrangler d1 create totalrecall`, then paste the printed id here.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "totalrecall",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "18fdca6d-8808-4e92-a04e-8981a880f027",
       "migrations_dir": "migrations"
     }
   ]
