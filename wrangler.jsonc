@@ -11,6 +11,13 @@
   "routes": [{ "pattern": "total-recall.stream", "custom_domain": true }],
   "workers_dev": false,
 
+  // The review pages at /review sit behind a Cloudflare Access application on
+  // total-recall.stream/review. Neither value is secret; without both, /review is closed.
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "proud-frog-2412.cloudflareaccess.com",
+    "ACCESS_AUD": "888532b99a7c4b5122d1e2fda7c0ad16a078d4878ee0cb320c419c6c1333caf4"
+  },
+
   "d1_databases": [
     {
       "binding": "DB",

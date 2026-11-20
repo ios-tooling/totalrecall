@@ -10,6 +10,7 @@ It replaces AIHistoryKit's per-Mac MCP server (same tool names and parameters) a
 | --- | --- |
 | `POST /mcp` | MCP over Streamable HTTP, bearer `AGENT_TOKEN`. Serves both current (2026-07-28) and 2025-era clients, statelessly. |
 | `POST /v1/events` | Hook events from Claude Code and Codex, bearer `INGEST_TOKEN` (or `AGENT_TOKEN`). The hook's JSON payload is the body; what only the client knows (`event`, `agent`, `machine`, `machineName`, `repo`, `dirty`, `turn`, `at`) are query parameters. |
+| `GET /review` | Read-only pages for looking through what is stored: projects, sessions, turns, memories and search. For a person signed in through Cloudflare Access; see below. |
 | `GET /` | Health. |
 | `client/totalrecall-hook.sh` | The hook forwarder. Only `SessionStart` waits for the server; everything else is sent in the background. |
 
@@ -39,6 +40,8 @@ src/mcp.ts                 tool definitions
 src/history.ts             sessions and append-only entries
 src/turns.ts               hook events → turn lifecycle
 src/context.ts             what SessionStart injects
+src/review/                the review pages and their read-only API
+src/access.ts              Cloudflare Access sign-in check
 src/memory.ts  search.ts  activity.ts  cos.ts  repo.ts  redact.ts  util.ts
 client/totalrecall-hook.sh hook forwarder
 test/                      runs inside the Workers runtime against a real local D1
@@ -77,6 +80,23 @@ Secrets are set once with `npx wrangler secret put <NAME>`:
 | `COS_INGEST_TOKEN` | Chief of Staff's ingest token. Until it is set, nothing is forwarded to Chief of Staff. |
 
 To stand up a copy elsewhere: `npx wrangler d1 create <name>`, put the printed id and your own domain in `wrangler.jsonc`, then migrate, set the secrets and deploy.
+
+## Review what is stored
+
+`https://total-recall.stream/review` shows everything in the database, read-only: an overview, each project with its status, memories, sessions and turns, every session's entries, all turns, all memories (active and retired), and ranked search.
+
+It is gated by a Cloudflare Access application on `total-recall.stream/review`, and the Worker checks the token Access attaches to each request (signature, expiry, issuer and audience) before answering. Two plain variables in `wrangler.jsonc` turn it on:
+
+| Variable | Value |
+| --- | --- |
+| `ACCESS_TEAM_DOMAIN` | The Zero Trust team's sign-in domain, `<team>.cloudflareaccess.com`. |
+| `ACCESS_AUD` | The Access application's audience tag. |
+
+Without both, `/review` answers 404; without a valid token, 403. The agent and hook tokens do not open it, and Access does not sit in front of `/mcp` or `/v1/events`.
+
+The page is one self-contained document (`src/review/page.html`) with no external resources. Everything stored is untrusted text, so it is only ever placed as text, under a content security policy that runs nothing but the page's own script.
+
+To look at it locally, point `ACCESS_TEAM_DOMAIN` in `.dev.vars` at a stand-in issuer: a full origin such as `http://127.0.0.1:9911` that serves a signing key at `/cdn-cgi/access/certs`, with a token it signed in the `CF_Authorization` cookie.
 
 ## Connect a client
 

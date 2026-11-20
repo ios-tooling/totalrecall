@@ -18,6 +18,8 @@ export default defineConfig(async () => ({
         bindings: {
           AGENT_TOKEN: "test-agent-token",
           INGEST_TOKEN: "test-ingest-token",
+          ACCESS_TEAM_DOMAIN: "team.test",
+          ACCESS_AUD: "test-review-audience",
           TEST_MIGRATIONS: await readD1Migrations("./migrations"),
         },
       },

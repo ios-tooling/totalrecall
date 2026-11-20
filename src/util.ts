@@ -9,6 +9,9 @@ export type AppEnv = Env & {
   COS?: Fetcher;
   COS_URL?: string;
   COS_INGEST_TOKEN?: string;
+  /** Cloudflare Access in front of /review: the team's sign-in domain and the application's audience tag. */
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
 };
 
 export function json(status: number, data: unknown): Response {

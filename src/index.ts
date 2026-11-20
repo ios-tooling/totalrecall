@@ -1,11 +1,13 @@
 // Total Recall: shared work history and memory for coding agents.
 //   POST /mcp        MCP over Streamable HTTP (AGENT_TOKEN)
 //   POST /v1/events  hook events from Claude Code and Codex (INGEST_TOKEN or AGENT_TOKEN)
+//   GET  /review     read-only review pages, for a person signed in through Cloudflare Access
 //   GET  /           health
 // Secrets: AGENT_TOKEN, INGEST_TOKEN, COS_INGEST_TOKEN. Never log them.
 
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { createServer } from "./mcp";
+import { handleReview } from "./review/api";
 import { handleHookEvent, parseHookRequest } from "./turns";
 import { type AppEnv, UserError, hasBearer, json } from "./util";
 
@@ -38,6 +40,8 @@ async function route(request: Request, env: AppEnv, ctx: ExecutionContext): Prom
     }
     return json(200, result);
   }
+
+  if (pathname === "/review" || pathname.startsWith("/review/")) return handleReview(request, env);
 
   return json(404, { error: "Not found" });
 }

@@ -4,7 +4,11 @@ import { findProject } from "./history";
 
 export interface SearchHit {
   source: "entry" | "turn" | "memory";
+  /** The matched row's id: an entry or memory number, or a turn id. */
+  id: string | number;
+  projectID: number | null;
   project: string | null;
+  sessionPK: number | null;
   session: string | null;
   kind: string | null;
   at: string;
@@ -21,9 +25,10 @@ export function ftsQuery(query: string, joiner: "AND" | "OR"): string | null {
 async function run(db: D1Database, match: string, projectID: number | null, limit: number): Promise<SearchHit[]> {
   const scope = projectID === null ? "" : "AND (search_index.project_id = ?2 OR search_index.project_id IS NULL)";
   const statement = db.prepare(
-    `SELECT search_index.source AS source, search_index.created_at AS at,
+    `SELECT search_index.source AS source, search_index.source_id AS id, search_index.created_at AS at,
             snippet(search_index, 0, '«', '»', ' … ', 40) AS snippet,
-            p.display_name AS project,
+            search_index.project_id AS projectID, p.display_name AS project,
+            COALESCE(es.id, ts.id) AS sessionPK,
             COALESCE(es.session_id, ts.session_id) AS session,
             COALESCE(e.kind, m.kind) AS kind
      FROM search_index
@@ -41,14 +46,14 @@ async function run(db: D1Database, match: string, projectID: number | null, limi
   return results;
 }
 
-/** All words first; any word if that finds nothing. */
 export async function search(db: D1Database, query: string, repoURL?: string | null, limit = 20): Promise<SearchHit[]> {
-  let projectID: number | null = null;
-  if (repoURL) {
-    const project = await findProject(db, repoURL);
-    if (!project) return [];
-    projectID = project.id;
-  }
+  if (!repoURL) return searchProject(db, query, null, limit);
+  const project = await findProject(db, repoURL);
+  return project ? searchProject(db, query, project.id, limit) : [];
+}
+
+/** All words first; any word if that finds nothing. A project's search includes global memories. */
+export async function searchProject(db: D1Database, query: string, projectID: number | null, limit = 20): Promise<SearchHit[]> {
   const strict = ftsQuery(query, "AND");
   if (!strict) return [];
   const hits = await run(db, strict, projectID, limit);

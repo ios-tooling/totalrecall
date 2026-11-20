@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Total Recall</title>
+<style nonce="__NONCE__">
+:root {
+  --bg: #f7f7f5; --panel: #ffffff; --ink: #1c1d1f; --soft: #62666d; --line: #e2e2de; --accent: #2f5fd0;
+  --mark: #fde68a; --good: #1a7f4b; --warn: #a15c00; --bad: #b3261e; --chip: #eeeeea;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181a; --panel: #202225; --ink: #e8e8e6; --soft: #9a9ea6; --line: #33363b; --accent: #8fb0ff;
+    --mark: #6b5300; --good: #5fd39a; --warn: #f0b35a; --bad: #ff8a80; --chip: #2b2e33;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; padding: 10px 16px;
+  background: var(--panel); border-bottom: 1px solid var(--line); }
+header strong { font-size: 16px; }
+nav { display: flex; gap: 14px; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+nav a.here { color: var(--ink); font-weight: 600; }
+header form { margin-left: auto; }
+input[type=search] { width: min(46vw, 320px); padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--ink); font: inherit; }
+#who { color: var(--soft); font-size: 13px; }
+main { max-width: 1040px; margin: 0 auto; padding: 18px 16px 60px; }
+h1 { font-size: 22px; margin: 4px 0 2px; }
+h2 { font-size: 16px; margin: 26px 0 8px; }
+.sub { color: var(--soft); font-size: 13px; overflow-wrap: anywhere; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-top: 14px; }
+.tile, .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.tile { padding: 12px 14px; }
+.tile b { display: block; font-size: 24px; line-height: 1.2; }
+.tile span { color: var(--soft); font-size: 13px; }
+.card { padding: 12px 14px; margin: 8px 0; }
+.row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.meta { color: var(--soft); font-size: 13px; }
+.chip { display: inline-block; padding: 0 8px; border-radius: 999px; background: var(--chip); font-size: 12px; line-height: 20px; white-space: nowrap; }
+.chip.good { color: var(--good); } .chip.warn { color: var(--warn); } .chip.bad { color: var(--bad); }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; }
+.retired { opacity: .62; }
+table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; font-weight: 600; color: var(--soft); text-transform: uppercase; letter-spacing: .03em; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.scroll { overflow-x: auto; }
+details { margin-top: 6px; }
+summary { cursor: pointer; color: var(--soft); font-size: 13px; }
+mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 1px; }
+button { font: inherit; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); cursor: pointer; }
+.tabs { display: flex; gap: 12px; margin: 10px 0; }
+.empty, .error { color: var(--soft); padding: 18px 0; }
+.error { color: var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <strong>Total Recall</strong>
+  <nav id="nav"></nav>
+  <form id="search"><input type="search" name="q" placeholder="Search history, prompts, memories" autocomplete="off" aria-label="Search"></form>
+  <span id="who"></span>
+</header>
+<main id="main"></main>
+<script nonce="__NONCE__">
+"use strict";
+// Everything stored is untrusted text (prompts, agent notes), so the page only ever
+// places it with textContent; nothing is parsed as HTML.
+const main = document.getElementById("main");
+
+function el(tag, attrs, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs || {})) {
+    if (value === null || value === undefined || value === false) continue;
+    if (key === "class") node.className = value;
+    else if (key === "onclick") node.addEventListener("click", value);
+    else node.setAttribute(key, value === true ? "" : value);
+  }
+  for (const child of children.flat()) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+  return node;
+}
+
+async function api(path) {
+  const response = await fetch("/review/api/" + path, { headers: { accept: "application/json" } });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || "Request failed (" + response.status + ")");
+  return body;
+}
+
+// Times are stored in UTC and shown in this computer's zone, with the zone named.
+const clock = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+const when = (iso) => (iso ? clock.format(new Date(iso)) : "—");
+function ago(iso) {
+  if (!iso) return "—";
+  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return minutes + " min ago";
+  if (minutes < 48 * 60) return Math.round(minutes / 60) + " h ago";
+  return Math.round(minutes / 1440) + " d ago";
+}
+const time = (iso) => el("span", { title: when(iso) }, ago(iso));
+const number = (value) => Number(value || 0).toLocaleString();
+const link = (href, text) => el("a", { href }, text);
+const chip = (text, tone) => el("span", { class: "chip" + (tone ? " " + tone : "") }, text);
+const empty = (text) => el("p", { class: "empty" }, text);
+const stateTone = { working: "good", idle: "", ended: "", interrupted: "warn", failed: "bad" };
+
+function turnCard(turn) {
+  const facts = [
+    turn.folder_path && "Folder: " + turn.folder_path,
+    turn.end_reason && "Ended: " + turn.end_reason,
+    turn.uncommitted === 1 && "Left uncommitted changes",
+    "Started " + when(turn.started_at),
+  ].filter(Boolean);
+  return el("div", { class: "card" },
+    el("div", { class: "row" },
+      el("b", {}, turn.description || turn.summary || "(no prompt)"),
+      chip(turn.state, stateTone[turn.state]),
+      turn.uncommitted === 1 && chip("uncommitted", "warn")),
+    el("div", { class: "row meta" },
+      link("#/project/" + turn.project_id, turn.project),
+      turn.session_pk ? link("#/session/" + turn.session_pk, turn.session) : "no session",
+      el("span", {}, turn.agent + " on " + (turn.machine_name || turn.machine || "unknown machine")),
+      time(turn.last_activity_at)),
+    el("details", {}, el("summary", {}, "Prompt and details"),
+      el("p", { class: "text" }, turn.prompt || "(no prompt captured)"),
+      el("p", { class: "meta" }, facts.join(" · "))));
+}
+
+function memoryCard(memory) {
+  const scope = memory.project_id === null ? "global" : memory.project || "project";
+  return el("div", { class: "card" + (memory.retired_at ? " retired" : "") },
+    el("div", { class: "row" },
+      el("b", {}, "#" + memory.id), chip(memory.kind),
+      memory.project_id === null ? chip("global") : link("#/project/" + memory.project_id, scope),
+      memory.retired_at && chip("retired" + (memory.retired_reason ? ": " + memory.retired_reason : ""), "warn"),
+      memory.superseded_by && el("span", { class: "meta" }, "superseded by #" + memory.superseded_by)),
+    el("p", { class: "text" }, memory.content),
+    el("div", { class: "meta" }, "Saved " + when(memory.created_at) + (memory.source ? " from " + memory.source : "")));
+}
+
+function entryCard(entry) {
+  const commits = JSON.parse(entry.commits || "[]");
+  const body = el("p", { class: "text" }, entry.content);
+  return el("div", { class: "card" },
+    el("div", { class: "row" }, chip(entry.kind, entry.kind === "summary" ? "good" : ""),
+      entry.title && el("b", {}, entry.title), el("span", { class: "meta" }, when(entry.created_at))),
+    entry.kind === "attachment" ? el("details", {}, el("summary", {}, number(entry.content.length) + " characters"), body) : body,
+    commits.length ? el("div", { class: "meta" }, "Commits: " + commits.join(", ")) : null);
+}
+
+function table(headings, rows) {
+  const numeric = headings.map((heading) => heading.startsWith("#"));
+  return el("div", { class: "scroll" }, el("table", {},
+    el("thead", {}, el("tr", {}, headings.map((heading, i) => el("th", { class: numeric[i] ? "num" : null }, heading.replace(/^#/, ""))))),
+    el("tbody", {}, rows.map((cells) => el("tr", {}, cells.map((cell, i) => el("td", { class: numeric[i] ? "num" : null }, cell)))))));
+}
+
+const sessionTokens = (s) => s.input_tokens + s.output_tokens + s.cache_tokens;
+
+const views = {
+  async overview() {
+    const { counts, turns, entries } = await api("overview");
+    const tiles = [["projects", "Projects", "#/projects"], ["sessions", "Sessions"], ["entries", "History entries"], ["turns", "Turns", "#/turns"],
+      ["memories", "Active memories", "#/memories"], ["retiredMemories", "Retired memories", "#/memories/retired"]];
+    return [
+      el("h1", {}, "Overview"),
+      el("div", { class: "tiles" }, tiles.map(([key, label, href]) =>
+        el("div", { class: "tile" }, el("b", {}, number(counts[key])), href ? link(href, label) : el("span", {}, label)))),
+      el("h2", {}, "Latest turns"), turns.length ? turns.map(turnCard) : empty("No turns captured yet."),
+      el("h2", {}, "Latest work"),
+      entries.length ? entries.map((entry) => el("div", { class: "card" },
+        el("div", { class: "row meta" }, chip(entry.kind), link("#/project/" + entry.project_id, entry.project),
+          link("#/session/" + entry.session_pk, entry.session), time(entry.created_at)),
+        el("p", { class: "text" }, entry.content.length > 600 ? entry.content.slice(0, 600) + "…" : entry.content))) : empty("No work logged yet."),
+    ];
+  },
+
+  async projects() {
+    const { projects } = await api("projects");
+    return [el("h1", {}, "Projects"), projects.length ? table(["Project", "Repository", "#Sessions", "#Entries", "#Turns", "#Memories", "Last activity"],
+      projects.map((p) => [link("#/project/" + p.id, p.display_name), el("span", { class: "sub" }, p.repo_url),
+        number(p.sessions), number(p.entries), number(p.turns), number(p.memories), time(p.last_activity)])) : empty("No projects yet.")];
+  },
+
+  async project(id) {
+    const { project, sessions, memories, turns } = await api("projects/" + encodeURIComponent(id));
+    return [
+      el("h1", {}, project.display_name), el("div", { class: "sub" }, project.repo_url),
+      el("h2", {}, "Current status"),
+      project.status ? el("div", { class: "card" }, el("div", { class: "meta" }, "Updated " + when(project.status_updated_at)),
+        el("p", { class: "text" }, project.status)) : empty("No status recorded."),
+      el("h2", {}, "Memories"), memories.length ? memories.map(memoryCard) : empty("No memories for this project."),
+      el("h2", {}, "Sessions"),
+      sessions.length ? table(["Session", "Agent", "Machine", "Model", "Started", "State", "#Entries", "#Tokens"],
+        sessions.map((s) => [link("#/session/" + s.id, s.session_id), s.agent, s.machine || "—", s.model || "—", time(s.started_at),
+          chip(s.ended_at ? "ended" : "open", s.ended_at ? "" : "good"), number(s.entries), number(sessionTokens(s))])) : empty("No sessions yet."),
+      el("h2", {}, "Recent turns"), turns.length ? turns.map(turnCard) : empty("No turns captured for this project."),
+      turns.length ? el("p", {}, link("#/turns/" + project.id, "All turns for this project")) : null,
+    ];
+  },
+
+  async session(pk) {
+    const { session, entries, turns } = await api("sessions/" + encodeURIComponent(pk));
+    const commits = JSON.parse(session.commits || "[]");
+    const facts = [session.agent + " on " + (session.machine || "unknown machine"), session.model, "started " + when(session.started_at),
+      session.ended_at ? "ended " + when(session.ended_at) : "still open", number(sessionTokens(session)) + " tokens",
+      commits.length ? "commits " + commits.join(", ") : null].filter(Boolean);
+    return [
+      el("h1", {}, session.session_id),
+      el("div", { class: "sub" }, link("#/project/" + session.project_id, session.project), " · ", facts.join(" · ")),
+      el("h2", {}, "History"), entries.length ? entries.map(entryCard) : empty("Nothing was logged in this session."),
+      el("h2", {}, "Turns"), turns.length ? turns.map(turnCard) : empty("No turns are linked to this session."),
+    ];
+  },
+
+  async turns(projectID) {
+    const list = el("div");
+    const more = el("button", { onclick: () => load() }, "Load older turns");
+    let before = "";
+    async function load() {
+      const query = new URLSearchParams({ limit: "50" });
+      if (projectID) query.set("project", projectID);
+      if (before) query.set("before", before);
+      const { turns } = await api("turns?" + query);
+      list.append(...turns.map(turnCard));
+      if (turns.length) before = turns[turns.length - 1].last_activity_at;
+      more.hidden = turns.length < 50;
+      if (!list.children.length) list.append(empty("No turns captured yet."));
+    }
+    await load();
+    return [el("h1", {}, "Turns"), projectID ? el("div", { class: "sub" }, "One project · ", link("#/turns", "show all")) : null, list, more];
+  },
+
+  async memories(state) {
+    const current = state || "active";
+    const { memories } = await api("memories?state=" + encodeURIComponent(current));
+    return [
+      el("h1", {}, "Memories"),
+      el("div", { class: "sub" }, "What sessions are told to remember. Global ones go to every session; the rest to their project's."),
+      el("div", { class: "tabs" }, [["active", "Active"], ["retired", "Retired"], ["all", "All"]].map(([key, label]) =>
+        key === current ? el("b", {}, label) : link("#/memories/" + key, label))),
+      memories.length ? memories.map(memoryCard) : empty("Nothing here."),
+    ];
+  },
+
+  async search(query) {
+    const q = decodeURIComponent(query || "");
+    document.querySelector("#search input").value = q;
+    const { hits } = await api("search?q=" + encodeURIComponent(q));
+    return [
+      el("h1", {}, "Search"), el("div", { class: "sub" }, hits.length + (hits.length === 1 ? " match for “" : " matches for “") + q + "”"),
+      hits.map((hit) => {
+        // The server marks matches with « and »; everything else is plain text.
+        const parts = hit.snippet.split(/[«»]/).map((part, i) => (i % 2 ? el("mark", {}, part) : part));
+        const target = hit.sessionPK ? link("#/session/" + hit.sessionPK, hit.session) : hit.source === "memory" ? link("#/memories/all", "memory #" + hit.id) : null;
+        return el("div", { class: "card" },
+          el("div", { class: "row meta" }, chip(hit.source === "entry" ? hit.kind : hit.source),
+            hit.projectID ? link("#/project/" + hit.projectID, hit.project) : chip("global"), target, el("span", {}, when(hit.at))),
+          el("p", { class: "text" }, parts));
+      }),
+    ];
+  },
+};
+
+const sections = [["overview", "Overview", "#/"], ["projects", "Projects", "#/projects"], ["turns", "Turns", "#/turns"], ["memories", "Memories", "#/memories"]];
+const owner = { project: "projects", session: "projects" };
+
+async function render() {
+  const [name = "overview", argument] = location.hash.replace(/^#\/?/, "").split("/");
+  const view = views[name] ? name : "overview";
+  document.getElementById("nav").replaceChildren(...sections.map(([key, label, href]) =>
+    el("a", { href, class: (owner[view] || view) === key ? "here" : null }, label)));
+  main.replaceChildren(el("p", { class: "empty" }, "Loading…"));
+  try {
+    const content = await views[view](argument);
+    main.replaceChildren(...content.flat().filter(Boolean));
+    window.scrollTo(0, 0);
+  } catch (error) {
+    main.replaceChildren(el("p", { class: "error" }, error.message));
+  }
+}
+
+document.getElementById("search").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const q = new FormData(event.target).get("q").trim();
+  if (q) location.hash = "#/search/" + encodeURIComponent(q);
+});
+window.addEventListener("hashchange", render);
+api("me").then((me) => { document.getElementById("who").textContent = me.email; }, () => {});
+render();
+</script>
+</body>
+</html>
