@@ -18,10 +18,9 @@
       "database_id": "18fdca6d-8808-4e92-a04e-8981a880f027",
       "migrations_dir": "migrations"
     }
-  ]
+  ],
 
-  // Optional: forward session snapshots to Chief of Staff. A service binding is
-  // required when both Workers live on the same account; uncomment once
-  // `chief-of-staff-ingest` is deployed there, and set the COS_INGEST_TOKEN secret.
-  // "services": [{ "binding": "COS", "service": "chief-of-staff-ingest" }]
+  // Session snapshots are forwarded to Chief of Staff over this binding once the
+  // COS_INGEST_TOKEN secret is set; without the secret nothing is sent.
+  "services": [{ "binding": "COS", "service": "chief-of-staff-ingest" }]
 }

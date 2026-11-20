@@ -74,7 +74,7 @@ Secrets are set once with `npx wrangler secret put <NAME>`:
 | --- | --- |
 | `AGENT_TOKEN` | Bearer token for agents (`/mcp`, and `/v1/events`). |
 | `INGEST_TOKEN` | Bearer token for hook scripts (`/v1/events` only). |
-| `COS_INGEST_TOKEN` | Chief of Staff's ingest token. Forwarding also needs the `services` binding in `wrangler.jsonc` uncommented; without both, nothing is forwarded. |
+| `COS_INGEST_TOKEN` | Chief of Staff's ingest token. Until it is set, nothing is forwarded to Chief of Staff. |
 
 To stand up a copy elsewhere: `npx wrangler d1 create <name>`, put the printed id and your own domain in `wrangler.jsonc`, then migrate, set the secrets and deploy.
 
@@ -82,13 +82,22 @@ To stand up a copy elsewhere: `npx wrangler d1 create <name>`, put the printed i
 
 The Worker is deployed and answers MCP calls; the client setup below has not been run on a Mac yet.
 
-**Hooks (Claude Code and Codex, on a Mac).** Copy `client/totalrecall-hook.sh` to `~/.local/bin/`, and create `~/.config/totalrecall/env` (mode 600):
+### A Mac with DevCenter
+
+DevCenter's machine setup does all of it. Create `~/.config/totalrecall/env` (mode 600) with the two tokens,
 
 ```sh
 TOTALRECALL_INGEST_TOKEN=…
+TOTALRECALL_AGENT_TOKEN=…
 ```
 
-The script posts to `https://total-recall.stream` unless `TOTALRECALL_URL` says otherwise.
+then press **Re-run Machine Setup** on DevCenter's status screen. It installs the hook script, registers it for Claude Code and Codex in place of AIHistoryKit's history hooks, registers the `totalrecall` MCP server with both clients, and swaps the instruction block. Deleting the file and re-running setup switches the Mac back. DevCenter owns those entries: on a Mac without the file it removes a `totalrecall` registration made by hand.
+
+DevCenter embeds a copy of `client/totalrecall-hook.sh`. When the script changes here, copy it into `AIHistoryKit/Sources/AIHistoryCore/TotalRecallHookScript.swift` there and bump `ConfiguredComponent.totalRecall`.
+
+### By hand
+
+**Hooks.** Copy `client/totalrecall-hook.sh` to `~/.local/bin/`, and put `TOTALRECALL_INGEST_TOKEN=…` in `~/.config/totalrecall/env` (mode 600). The script posts to `https://total-recall.stream` unless `TOTALRECALL_URL` says otherwise.
 
 Register it for `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, `StopFailure` and `SessionEnd` in `~/.claude/settings.json`, one entry per event:
 
@@ -96,7 +105,7 @@ Register it for `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`,
 { "hooks": { "SessionStart": [{ "hooks": [{ "type": "command", "command": "\"$HOME/.local/bin/totalrecall-hook.sh\" SessionStart" }] }] } }
 ```
 
-For Codex, the same in `~/.codex/hooks.json` with `codex` as the second argument (`… totalrecall-hook.sh Stop codex`), for `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `Interrupt` and `SessionEnd`.
+For Codex, the same in `~/.codex/hooks.json` with `codex` as the second argument (`… totalrecall-hook.sh Stop codex`), for `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `Interrupt` and `SessionEnd`. Codex runs a new or changed hook only after it is trusted with `/hooks`.
 
 **MCP, Claude Code** (`~/.claude.json` or a repo's `.mcp.json`):
 
@@ -118,6 +127,6 @@ A client with no hooks can say where it runs with an `X-Totalrecall-Machine` hea
 
 - **OAuth**, which the Claude web, desktop and mobile apps need to add this as a custom connector. Bearer tokens cover Claude Code, Codex and cloud sessions.
 - **An offline spool** in the hook script: an event posted while the Worker is unreachable is lost.
-- **Importing** existing AIHistoryKit history, and moving DevCenter's installer and apps over to this server.
+- **Importing** existing AIHistoryKit history, and moving DevCenter's apps over to this server. Its machine setup already switches a Mac.
 - **Transcript ingestion** and semantic (embedding) search. Today the history is what agents log plus every captured prompt.
 - **Token totals from transcripts.** AIHistoryKit's hooks summed usage from Claude's transcript file; here totals come only from `log_work` and `end_session`.

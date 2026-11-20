@@ -6,6 +6,15 @@ export default defineConfig(async () => ({
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
+        // A stand-in for the Chief of Staff Worker the COS service binding points at.
+        workers: [
+          {
+            name: "chief-of-staff-ingest",
+            modules: true,
+            compatibilityDate: "2026-11-01",
+            script: 'export default { fetch() { return Response.json({ id: 1 }, { status: 201 }); } };',
+          },
+        ],
         bindings: {
           AGENT_TOKEN: "test-agent-token",
           INGEST_TOKEN: "test-ingest-token",

@@ -67,8 +67,10 @@ case "$event" in
     case "$reply" in '{"hookSpecificOutput"'*) printf '%s\n' "$reply" ;; esac
     ;;
   UserPromptSubmit)
-    # The turn id is made here, so the agent can be told it without waiting on the network.
-    turn="$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$$-$(date +%s)")"
+    # The harness's own turn id when it sends one (Codex); otherwise one made here, so the
+    # agent can be told it without waiting on the network.
+    turn="$(field turn_id)"
+    [ -n "$turn" ] || turn="$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$$-$(date +%s)")"
     (post 10 --url-query "turn=$turn" >/dev/null 2>&1 &)
     printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"Total Recall captured this turn. Optional update_work enrichment: sessionKey `%s`, turnID `%s`, agentName `%s`, repoURL `%s`."}}\n' \
       "$(json_string "$session")" "$turn" "$(json_string "$agent")" "$(json_string "$repo")"
