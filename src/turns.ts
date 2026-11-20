@@ -5,7 +5,7 @@
 
 import { buildSessionContext } from "./context";
 import { reportToChiefOfStaff } from "./cos";
-import { type Project, ensureProject, startSession } from "./history";
+import { type Project, type Session, ensureProject, startSession } from "./history";
 import { firstLine, redact } from "./redact";
 import { identityKey } from "./repo";
 import { type AppEnv, UserError, iso, parseTime, sha256 } from "./util";
@@ -75,16 +75,30 @@ async function currentTurn(db: D1Database, e: HookEvent, sessionKey: string, tur
     .first<Turn>();
 }
 
+/**
+ * The session for a harness conversation, opened the first time any hook mentions it.
+ * SessionStart is not the only way in: hooks can begin firing in a conversation that was
+ * already running when they were installed, or that is being resumed. Turns captured
+ * before the session existed are attached to it.
+ */
+async function sessionFor(db: D1Database, e: HookEvent, project: Project, sessionKey: string): Promise<Session> {
+  const { session } = await startSession(db, {
+    repoURL: e.repo, agent: e.agent, model: text(e.hook.model) || null, machine: e.machine || null, harnessSessionID: sessionKey, at: e.at,
+  });
+  await db
+    .prepare("UPDATE turns SET session_pk = ? WHERE project_id = ? AND session_key = ? AND session_pk IS NULL")
+    .bind(session.id, project.id, sessionKey)
+    .run();
+  return session;
+}
+
 async function startTurn(db: D1Database, e: HookEvent, project: Project, sessionKey: string, turnID: string): Promise<void> {
   const id = await turnPK(e.repo, e.machine, e.agent, sessionKey, turnID);
   // A duplicate start must not reopen a stopped turn.
   if (await db.prepare("SELECT id FROM turns WHERE id = ?").bind(id).first()) return;
   const at = iso(e.at);
   const prompt = redact(text(e.hook.prompt)).slice(0, MAX_PROMPT);
-  const session = await db
-    .prepare("SELECT id FROM sessions WHERE project_id = ? AND harness_session_id = ? ORDER BY id DESC LIMIT 1")
-    .bind(project.id, sessionKey)
-    .first<{ id: number }>();
+  const session = await sessionFor(db, e, project, sessionKey);
   await db.batch([
     // A new turn supersedes an unclosed turn in this exact harness session only.
     db
@@ -99,7 +113,7 @@ async function startTurn(db: D1Database, e: HookEvent, project: Project, session
                             folder_path, state, started_at, last_activity_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'working', ?, ?)`,
       )
-      .bind(id, project.id, session?.id ?? null, e.agent, e.machine, e.machineName, sessionKey, turnID, firstLine(prompt), prompt, text(e.hook.cwd) || null, at, at),
+      .bind(id, project.id, session.id, e.agent, e.machine, e.machineName, sessionKey, turnID, firstLine(prompt), prompt, text(e.hook.cwd) || null, at, at),
   ]);
 }
 
@@ -136,10 +150,14 @@ export async function handleHookEvent(env: AppEnv, ctx: ExecutionContext, e: Hoo
   switch (e.event) {
     case "SessionStart": {
       const source = text(e.hook.source) || "startup";
-      if (source !== "startup" && source !== "clear") return {};
-      const { session } = await startSession(db, {
-        repoURL: e.repo, agent: e.agent, model: text(e.hook.model) || null, machine: e.machine || null, harnessSessionID: sessionKey, at: e.at,
-      });
+      const known = await db
+        .prepare("SELECT id FROM sessions WHERE project_id = ? AND harness_session_id = ? LIMIT 1")
+        .bind(project.id, sessionKey)
+        .first();
+      // A resumed or compacted conversation already has its context. One never seen
+      // before needs it whatever the source: it predates the hooks.
+      if (known && source !== "startup" && source !== "clear") return {};
+      const session = await sessionFor(db, e, project, sessionKey);
       return { additionalContext: await buildSessionContext(db, project, session) };
     }
     case "UserPromptSubmit": {

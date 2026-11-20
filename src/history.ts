@@ -71,7 +71,7 @@ export interface StartSession {
   at?: Date;
 }
 
-/** Opens a session. A harness session that already has one gets it back, so a retried hook cannot open two. */
+/** Opens a session. A harness conversation that already has one gets it back, so hooks and the agent share it. */
 export async function startSession(db: D1Database, input: StartSession): Promise<{ project: Project; session: Session }> {
   const at = input.at ?? new Date();
   const project = await ensureProject(db, input.repoURL, at);
@@ -80,7 +80,14 @@ export async function startSession(db: D1Database, input: StartSession): Promise
       .prepare("SELECT * FROM sessions WHERE project_id = ? AND harness_session_id = ? ORDER BY id DESC LIMIT 1")
       .bind(project.id, input.harnessSessionID)
       .first<Session>();
-    if (existing) return { project, session: existing };
+    if (existing) {
+      // Whoever joins later may know what the hook that opened it did not.
+      if (input.model && !existing.model) {
+        await db.prepare("UPDATE sessions SET model = ? WHERE id = ?").bind(input.model, existing.id).run();
+        existing.model = input.model;
+      }
+      return { project, session: existing };
+    }
   }
   const base = sessionIDFor(input.agent, at);
   for (let attempt = 1; attempt <= 20; attempt++) {

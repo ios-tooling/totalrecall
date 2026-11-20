@@ -125,18 +125,22 @@ describe("what is shown", () => {
 
     const { projects } = await get("projects");
     const listed = projects.find((p: any) => p.repo_url === repoURL);
-    expect(listed).toMatchObject({ sessions: 1, entries: 3, turns: 1, memories: 1 });
+    // One session the agent opened, and one the hook opened for its conversation.
+    expect(listed).toMatchObject({ sessions: 2, entries: 3, turns: 1, memories: 1 });
     // Newest activity first.
     expect(projects[0].repo_url).toBe(repoURL);
 
     const detail = await get(`projects/${listed.id}`);
     expect(detail.project.status).toBe("Importer done; exporter next.");
-    expect(detail.sessions).toHaveLength(1);
-    expect(detail.sessions[0]).toMatchObject({ session_id: sessionID, agent: "claude", machine: "MBP14", model: "claude-opus-5", entries: 3, input_tokens: 10 });
+    expect(detail.sessions).toHaveLength(2);
+    const logged = detail.sessions.find((s: any) => s.session_id === sessionID);
+    expect(logged).toMatchObject({ agent: "claude", machine: "MBP14", model: "claude-opus-5", entries: 3, input_tokens: 10 });
+    const hooked = detail.sessions.find((s: any) => s.harness_session_id === key);
+    expect(detail.turns[0].session_pk).toBe(hooked.id);
     expect(detail.memories.map((m: any) => [m.id, m.retired_at === null, m.retired_reason])).toEqual([[kept, true, null], [dropped, false, "was wrong"]]);
     expect(detail.turns[0]).toMatchObject({ summary: `Please <b>finish</b> the ${marker} exporter`, state: "idle", uncommitted: 1, machine: "MBP14", project: listed.display_name });
 
-    const session = await get(`sessions/${detail.sessions[0].id}`);
+    const session = await get(`sessions/${logged.id}`);
     expect(session.session).toMatchObject({ session_id: sessionID, project: listed.display_name, repo_url: repoURL });
     expect(session.entries.map((e: any) => [e.kind, e.title, e.content])).toEqual([
       ["work", null, `Built the ${marker} importer.`], ["status", null, "Importer done; exporter next."], ["attachment", "plan.md", "the plan"],
@@ -160,7 +164,7 @@ describe("what is shown", () => {
     const { hits } = await get(`search?q=${marker}`);
     expect(hits.map((h: any) => h.source).sort()).toEqual(["entry", "memory", "turn"]);
     const entry = hits.find((h: any) => h.source === "entry");
-    expect(entry).toMatchObject({ projectID: listed.id, sessionPK: detail.sessions[0].id, session: sessionID, kind: "work" });
+    expect(entry).toMatchObject({ projectID: listed.id, sessionPK: logged.id, session: sessionID, kind: "work" });
     expect(entry.snippet).toContain(`«${marker}»`);
     expect(hits.find((h: any) => h.source === "memory").id).toBe(kept);
     expect((await get(`search?q=${marker}&project=${listed.id + 100000}`)).hits).toEqual([]);

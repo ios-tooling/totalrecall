@@ -171,3 +171,52 @@ describe("chief of staff forwarding", () => {
     expect(posts).toHaveLength(4);
   });
 });
+
+describe("conversations the hooks join late", () => {
+  it("opens a session at the first prompt, attaches earlier turns, and lets the agent join it", async () => {
+    const repo = uniqueRepo("late");
+    const key = sessionKey();
+    const cwd = "/Users/ben/dev/late";
+    // No SessionStart: the conversation was already running when the hooks were installed.
+    await hook({ event: "UserPromptSubmit", repo, at: minutesAgo(9) }, { session_id: key, cwd, prompt: "where are we at now?" });
+    await hook({ event: "Stop", repo, dirty: true, at: minutesAgo(8) }, { session_id: key, cwd });
+    await hook({ event: "UserPromptSubmit", repo, at: minutesAgo(7) }, { session_id: key, cwd, prompt: "how is the comma fix going?" });
+
+    const sessions = (await call(client, "list_sessions", { repoURL: repo })).text.split("\n");
+    expect(sessions).toHaveLength(1);
+    const opened = sessions[0]!.match(/^- (\S+) \[claude on MBP14\] open/)![1]!;
+    const linked = await env.DB.prepare("SELECT COUNT(*) AS turns, COUNT(DISTINCT session_pk) AS sessions, COUNT(session_pk) AS attached FROM turns WHERE session_key = ?").bind(key).first();
+    expect(linked).toEqual({ turns: 2, sessions: 1, attached: 2 });
+
+    // The agent, told only its sessionKey, gets that same session rather than a second one.
+    const joined = await call(client, "start_session", { repoURL: repo, agentName: "claude", model: "claude-opus-5", sessionKey: key });
+    expect(joined.text).toBe(opened);
+    expect((await call(client, "log_work", { sessionID: joined.text, repoURL: repo, content: "Fixed the comma handling." })).isError).toBe(false);
+    expect((await call(client, "list_sessions", { repoURL: repo })).text.split("\n")).toHaveLength(1);
+    expect(await env.DB.prepare("SELECT model FROM sessions WHERE harness_session_id = ?").bind(key).first()).toEqual({ model: "claude-opus-5" });
+    // Without a sessionKey it is a separate session, as before.
+    expect((await call(client, "start_session", { repoURL: repo, agentName: "claude" })).text).not.toBe(opened);
+  });
+
+  it("gives a resumed conversation its context only if it has never had it", async () => {
+    const repo = uniqueRepo("resume");
+    const key = sessionKey();
+    const cwd = "/Users/ben/dev/resume";
+    // A turn captured before any session existed for this conversation.
+    await env.DB.prepare("INSERT INTO projects (identity_key, repo_url, display_name, created_at) VALUES (?, ?, 'resume', ?)")
+      .bind(repo.slice("https://github.com/".length).replace("/", "_").toLowerCase(), repo, minutesAgo(30)).run();
+    const project = await env.DB.prepare("SELECT id FROM projects WHERE repo_url = ?").bind(repo).first<{ id: number }>();
+    await env.DB.prepare(
+      "INSERT INTO turns (id, project_id, agent, machine, session_key, turn_id, summary, state, started_at, last_activity_at) VALUES (?, ?, 'claude', 'MBP14', ?, 't0', 'before the session', 'idle', ?, ?)",
+    ).bind(`turn_${key}`, project!.id, key, minutesAgo(20), minutesAgo(19)).run();
+
+    const first = await hook({ event: "SessionStart", repo }, { session_id: key, cwd, source: "resume" });
+    expect(first.body.additionalContext).toMatch(/opened session `[^`]+_claude`/);
+    expect(await env.DB.prepare("SELECT session_pk IS NOT NULL AS attached FROM turns WHERE id = ?").bind(`turn_${key}`).first()).toEqual({ attached: 1 });
+
+    for (const source of ["resume", "compact"]) {
+      expect((await hook({ event: "SessionStart", repo }, { session_id: key, cwd, source })).body).toEqual({});
+    }
+    expect((await call(client, "list_sessions", { repoURL: repo })).text.split("\n")).toHaveLength(1);
+  });
+});
