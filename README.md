@@ -64,7 +64,7 @@ npm run dev
 1. `npx wrangler d1 create totalrecall`, then paste the printed `database_id` into `wrangler.jsonc`.
 2. `npm run migrate:remote`
 3. `npx wrangler secret put AGENT_TOKEN`, then the same for `INGEST_TOKEN` (two different long random strings).
-4. `npm run deploy`, then add the custom domain to the Worker in the Cloudflare dashboard (or a `routes` entry in `wrangler.jsonc`).
+4. `npm run deploy`. The Worker is served at `https://total-recall.stream`, a custom domain set in `wrangler.jsonc`; the zone has to be on the same Cloudflare account first. There is no `workers.dev` address.
 5. Chief of Staff forwarding (optional): uncomment the `services` binding in `wrangler.jsonc`, `npx wrangler secret put COS_INGEST_TOKEN` with Chief of Staff's ingest token, and deploy again. Without both, nothing is forwarded.
 
 ## Connect a client
@@ -74,9 +74,10 @@ None of this section has been run against a deployed Worker yet.
 **Hooks (Claude Code and Codex, on a Mac).** Copy `client/totalrecall-hook.sh` to `~/.local/bin/`, and create `~/.config/totalrecall/env` (mode 600):
 
 ```sh
-TOTALRECALL_URL=https://recall.example.com
 TOTALRECALL_INGEST_TOKEN=…
 ```
+
+The script posts to `https://total-recall.stream` unless `TOTALRECALL_URL` says otherwise.
 
 Register it for `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, `StopFailure` and `SessionEnd` in `~/.claude/settings.json`, one entry per event:
 
@@ -89,14 +90,14 @@ For Codex, the same in `~/.codex/hooks.json` with `codex` as the second argument
 **MCP, Claude Code** (`~/.claude.json` or a repo's `.mcp.json`):
 
 ```json
-{ "mcpServers": { "totalrecall": { "type": "http", "url": "https://recall.example.com/mcp", "headers": { "Authorization": "Bearer ${TOTALRECALL_AGENT_TOKEN}" } } } }
+{ "mcpServers": { "totalrecall": { "type": "http", "url": "https://total-recall.stream/mcp", "headers": { "Authorization": "Bearer ${TOTALRECALL_AGENT_TOKEN}" } } } }
 ```
 
 **MCP, Codex** (`~/.codex/config.toml`):
 
 ```toml
 [mcp_servers.totalrecall]
-url = "https://recall.example.com/mcp"
+url = "https://total-recall.stream/mcp"
 bearer_token_env_var = "TOTALRECALL_AGENT_TOKEN"
 ```
 

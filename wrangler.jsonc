@@ -6,6 +6,11 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
+  // Served only from the custom domain, so there is no workers.dev address to guard as well.
+  // The zone must be on the same Cloudflare account; deploying creates the DNS record and certificate.
+  "routes": [{ "pattern": "total-recall.stream", "custom_domain": true }],
+  "workers_dev": false,
+
   // `wrangler d1 create totalrecall`, then paste the printed id here.
   "d1_databases": [
     {

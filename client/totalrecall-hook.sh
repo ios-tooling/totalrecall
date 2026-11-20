@@ -4,8 +4,8 @@
 #   totalrecall-hook.sh <Event> [agent]      (the hook's JSON payload arrives on stdin)
 #
 # Settings come from the environment or from ~/.config/totalrecall/env (mode 600):
-#   TOTALRECALL_URL=https://recall.example.com
-#   TOTALRECALL_INGEST_TOKEN=...
+#   TOTALRECALL_INGEST_TOKEN=...                      required; without it the script does nothing
+#   TOTALRECALL_URL=https://total-recall.stream       optional; this is the default
 #
 # Only SessionStart waits for the server (it returns context to inject, 3 s at most).
 # Every other event is sent in the background, so a slow or unreachable server never
@@ -19,7 +19,7 @@ agent="${2:-claude}"
 config="${TOTALRECALL_CONFIG:-$HOME/.config/totalrecall/env}"
 # shellcheck disable=SC1090
 [ -r "$config" ] && . "$config"
-url="${TOTALRECALL_URL:-}"
+url="${TOTALRECALL_URL:-https://total-recall.stream}"
 token="${TOTALRECALL_INGEST_TOKEN:-}"
 payload="$(cat)"
 
