@@ -33,8 +33,17 @@ export function cosBody(turn: Turn, project: Project, at: Date) {
   };
 }
 
+/** Forwarding needs somewhere to send to and a token to send with. */
+export const forwardingConfigured = (env: AppEnv) => !!(env.COS || env.COS_URL) && !!env.COS_INGEST_TOKEN?.trim();
+
 export async function reportToChiefOfStaff(env: AppEnv, turn: Turn, project: Project, sessionEnded: boolean, at: Date): Promise<void> {
-  if (!env.COS_INGEST_TOKEN || !(env.COS || env.COS_URL)) return;
+  if (!(env.COS || env.COS_URL)) return;
+  const token = env.COS_INGEST_TOKEN?.trim();
+  if (!token) {
+    // A destination with no token is a half-finished setup, not a choice; say so where it can be found.
+    console.warn("chief of staff: COS_INGEST_TOKEN is empty, so nothing is forwarded");
+    return;
+  }
   const last = await env.DB.prepare("SELECT posted_at, uncommitted FROM cos_posts WHERE session_key = ?")
     .bind(turn.session_key)
     .first<{ posted_at: string; uncommitted: number | null }>();
@@ -48,7 +57,7 @@ export async function reportToChiefOfStaff(env: AppEnv, turn: Turn, project: Pro
 
   const init = {
     method: "POST",
-    headers: { authorization: `Bearer ${env.COS_INGEST_TOKEN}`, "content-type": "application/json" },
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify(cosBody(turn, project, at)),
   };
   const response = env.COS

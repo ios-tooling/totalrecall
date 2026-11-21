@@ -155,6 +155,7 @@ describe("what is shown", () => {
 
     const overview = await get("overview");
     expect(overview.counts.projects).toBeGreaterThanOrEqual(1);
+    expect(overview.forwarding.configured).toBe(true);
     expect(overview.counts.retiredMemories).toBeGreaterThanOrEqual(1);
     expect(overview.turns[0].session_key).toBe(key);
     expect(overview.entries[0]).toMatchObject({ kind: "status", project: listed.display_name, session: sessionID });

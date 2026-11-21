@@ -11,6 +11,7 @@
 //   GET /review/api/search       ranked search (?q=, ?project=)
 
 import { accessConfigured, accessIdentity } from "../access";
+import { forwardingConfigured } from "../cos";
 import { searchProject } from "../search";
 import { type AppEnv, json } from "../util";
 import page from "./page.html";
@@ -36,7 +37,7 @@ const TURN_COLUMNS = `t.id, t.project_id, t.session_pk, t.agent, t.machine, t.ma
   p.display_name AS project, s.session_id AS session`;
 const TURN_JOINS = "FROM turns t JOIN projects p ON p.id = t.project_id LEFT JOIN sessions s ON s.id = t.session_pk";
 
-async function overview(db: D1Database): Promise<Response> {
+async function overview(db: D1Database, env: AppEnv): Promise<Response> {
   const counts = await db
     .prepare(
       `SELECT (SELECT COUNT(*) FROM projects) AS projects, (SELECT COUNT(*) FROM sessions) AS sessions,
@@ -54,7 +55,9 @@ async function overview(db: D1Database): Promise<Response> {
        WHERE e.kind <> 'attachment' ORDER BY e.id DESC LIMIT 12`,
     ),
   ]);
-  return data({ counts, turns: turns!.results, entries: entries!.results });
+  const lastPost = await db.prepare("SELECT MAX(posted_at) AS at FROM cos_posts").first<{ at: string | null }>();
+  const forwarding = { configured: forwardingConfigured(env), lastPostAt: lastPost?.at ?? null };
+  return data({ counts, forwarding, turns: turns!.results, entries: entries!.results });
 }
 
 async function projects(db: D1Database): Promise<Response> {
@@ -129,13 +132,14 @@ async function memories(db: D1Database, url: URL): Promise<Response> {
   return data({ memories: results });
 }
 
-async function api(db: D1Database, path: string, url: URL, email: string): Promise<Response> {
+async function api(env: AppEnv, path: string, url: URL, email: string): Promise<Response> {
+  const db = env.DB;
   const [resource, id] = path.split("/");
   switch (resource) {
     case "me":
       return data({ email });
     case "overview":
-      return overview(db);
+      return overview(db, env);
     case "projects": {
       if (id === undefined) return projects(db);
       const projectID = idOf(id);
@@ -182,6 +186,6 @@ export async function handleReview(request: Request, env: AppEnv): Promise<Respo
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/review\/?/, "");
   if (path === "") return html();
-  if (path.startsWith("api/")) return api(env.DB, path.slice(4).replace(/\/+$/, ""), url, identity.email);
+  if (path.startsWith("api/")) return api(env, path.slice(4).replace(/\/+$/, ""), url, identity.email);
   return json(404, { error: "Not found" });
 }

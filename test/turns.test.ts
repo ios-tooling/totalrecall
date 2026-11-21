@@ -1,6 +1,6 @@
 import type { Client } from "@modelcontextprotocol/client";
 import { env } from "cloudflare:workers";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { cosBody, reportToChiefOfStaff } from "../src/cos";
 import type { Project } from "../src/history";
 import type { Turn } from "../src/turns";
@@ -218,5 +218,51 @@ describe("conversations the hooks join late", () => {
       expect((await hook({ event: "SessionStart", repo }, { session_id: key, cwd, source })).body).toEqual({});
     }
     expect((await call(client, "list_sessions", { repoURL: repo })).text.split("\n")).toHaveLength(1);
+  });
+});
+
+describe("chief of staff forwarding, end to end", () => {
+  /** One hook post through the Worker itself, waiting for the work it leaves running after the response. */
+  async function post(event: string, repo: string, key: string, overrides: Partial<AppEnv> = {}, dirty?: boolean) {
+    const { createExecutionContext, waitOnExecutionContext } = await import("cloudflare:test");
+    const worker = (await import("../src/index")).default;
+    const query = new URLSearchParams({ event, repo, agent: "claude", machine: "MBP14" });
+    if (dirty !== undefined) query.set("dirty", dirty ? "1" : "0");
+    const request = new Request(`https://total-recall.test/v1/events?${query}`, {
+      method: "POST",
+      headers: { authorization: "Bearer test-ingest-token", "content-type": "application/json" },
+      body: JSON.stringify({ session_id: key, cwd: "/Users/ben/dev/forward", prompt: "ship it" }),
+    });
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(request as never, { ...env, ...overrides } as never, ctx);
+    await waitOnExecutionContext(ctx);
+    return response.status;
+  }
+  const posted = (key: string) => env.DB.prepare("SELECT uncommitted FROM cos_posts WHERE session_key = ?").bind(key).first();
+
+  it("posts a session snapshot when a turn stops, over the service binding", async () => {
+    const repo = uniqueRepo("forward");
+    const key = sessionKey();
+    expect(await post("UserPromptSubmit", repo, key)).toBe(200);
+    expect(await posted(key)).toBeNull();
+    expect(await post("Stop", repo, key, {}, true)).toBe(200);
+    expect(await posted(key)).toEqual({ uncommitted: 1 });
+  });
+
+  it("sends nothing, and says why, when the token is empty or wrong", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const repo = uniqueRepo("forward-off");
+    for (const [token, logged] of [["", warn], ["  \n", warn], ["not-the-token", error]] as const) {
+      const key = sessionKey();
+      await post("UserPromptSubmit", repo, key, { COS_INGEST_TOKEN: token });
+      expect(await post("Stop", repo, key, { COS_INGEST_TOKEN: token }, false)).toBe(200);
+      expect(await posted(key)).toBeNull();
+      expect(logged).toHaveBeenCalled();
+      logged.mockClear();
+    }
+    expect(error).not.toHaveBeenCalled();
+    warn.mockRestore();
+    error.mockRestore();
   });
 });

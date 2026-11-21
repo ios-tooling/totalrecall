@@ -7,7 +7,8 @@
 #   TOTALRECALL_INGEST_TOKEN=...                      required; without it the script does nothing
 #   TOTALRECALL_URL=https://total-recall.stream       optional; this is the default
 #
-# Only SessionStart waits for the server (it returns context to inject, 3 s at most).
+# Only SessionStart waits for the server (it returns context to inject, 3 s at most), and
+# SessionEnd for at most 1 s, because nothing sent in the background survives the exit.
 # Every other event is sent in the background, so a slow or unreachable server never
 # delays a prompt or a turn. A hook must never break the turn it rides on: every
 # failure here is silent and the exit status is always 0. Needs curl 7.87 or later.
@@ -97,6 +98,10 @@ case "$event" in
       fi
     ) >/dev/null 2>&1 &
     quiet_exit
+    ;;
+  SessionEnd)
+    # The harness is on its way out and takes a background job with it, so this one waits, briefly.
+    post 1 >/dev/null 2>&1
     ;;
   *)
     (post 10 >/dev/null 2>&1 &)

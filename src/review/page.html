@@ -169,11 +169,14 @@ const sessionTokens = (s) => s.input_tokens + s.output_tokens + s.cache_tokens;
 
 const views = {
   async overview() {
-    const { counts, turns, entries } = await api("overview");
+    const { counts, forwarding, turns, entries } = await api("overview");
+    const forwarded = !forwarding.configured ? "Chief of Staff forwarding is off: its token is not set on the Worker."
+      : forwarding.lastPostAt ? "Chief of Staff forwarding is on; last sent " + when(forwarding.lastPostAt) + "."
+      : "Chief of Staff forwarding is on; nothing has been sent yet.";
     const tiles = [["projects", "Projects", "#/projects"], ["sessions", "Sessions"], ["entries", "History entries"], ["turns", "Turns", "#/turns"],
       ["memories", "Active memories", "#/memories"], ["retiredMemories", "Retired memories", "#/memories/retired"]];
     return [
-      el("h1", {}, "Overview"),
+      el("h1", {}, "Overview"), el("div", { class: "sub" }, forwarded),
       el("div", { class: "tiles" }, tiles.map(([key, label, href]) =>
         el("div", { class: "tile" }, el("b", {}, number(counts[key])), href ? link(href, label) : el("span", {}, label)))),
       el("h2", {}, "Latest turns"), turns.length ? turns.map(turnCard) : empty("No turns captured yet."),
