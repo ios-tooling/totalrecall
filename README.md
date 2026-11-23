@@ -50,7 +50,7 @@ test/                      runs inside the Workers runtime against a real local 
 ## Develop
 
 ```bash
-npm install
+npm ci              # exactly what package-lock.json pins; npm install re-resolves it
 npm test            # vitest in the Workers runtime, migrations applied
 npm run typecheck
 ```
@@ -100,7 +100,7 @@ To look at it locally, point `ACCESS_TEAM_DOMAIN` in `.dev.vars` at a stand-in i
 
 ## Connect a client
 
-The Worker is deployed and answers MCP calls; the client setup below has not been run on a Mac yet.
+The Worker is deployed and answers MCP calls. DevCenter's machine setup has switched one Mac so far; the by-hand steps have not been run.
 
 ### A Mac with DevCenter
 
